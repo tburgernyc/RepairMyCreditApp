@@ -6,6 +6,19 @@
  * Firebase Admin SDK (which requires Node.js — unavailable in Edge Runtime).
  */
 
+// ─── Base64url helper ────────────────────────────────────────────────────────
+
+/**
+ * Encodes a string as base64url (JWT-compatible).
+ * btoa() alone produces regular base64 with +, /, = which Google's OAuth rejects.
+ */
+function toBase64Url(str) {
+  return btoa(str)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '')
+}
+
 // ─── JWT Verification ────────────────────────────────────────────────────────
 
 let cachedPublicKeys = null
@@ -97,9 +110,9 @@ async function getServiceAccountToken() {
   const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
   const now = Math.floor(Date.now() / 1000)
 
-  // Build JWT for service account
-  const header = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
-  const payload = btoa(
+  // Build JWT for service account — must use base64url (not btoa regular base64)
+  const header = toBase64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const payload = toBase64Url(
     JSON.stringify({
       iss: sa.client_email,
       scope: 'https://www.googleapis.com/auth/datastore',

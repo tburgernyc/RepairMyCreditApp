@@ -66,9 +66,18 @@ export function useGemini() {
         const { analysisId, result } = await res.json()
         setResult(result, analysisId)
       } catch (err) {
+        const status = err.status
         const message =
-          err.status === 429
+          status === 429
             ? 'Daily analysis limit reached (10/day). Try again tomorrow.'
+            : status === 401
+            ? 'Session expired. Please sign out and sign back in.'
+            : status === 503
+            ? 'Server configuration error. Please contact support.'
+            : status === 504
+            ? 'Analysis timed out. Try uploading fewer or smaller files, then retry.'
+            : status === 502
+            ? 'The AI service returned an error. Please wait a moment and try again.'
             : err.message || 'Analysis failed. Please try again.'
         setError(message)
       }

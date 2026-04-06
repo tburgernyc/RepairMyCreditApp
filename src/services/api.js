@@ -1,7 +1,7 @@
-const RETRYABLE_CODES = new Set([429, 500, 502, 503, 504])
-const NON_RETRYABLE_CODES = new Set([400, 401, 403, 404])
-const MAX_ATTEMPTS = 5
-const BASE_DELAY_MS = 1000 // doubles each retry: 1s, 2s, 4s, 8s, 16s
+const RETRYABLE_CODES = new Set([500, 502, 503, 504])
+const NON_RETRYABLE_CODES = new Set([400, 401, 403, 404, 429, 503])
+const MAX_ATTEMPTS = 3
+const BASE_DELAY_MS = 1500 // doubles each retry: 1.5s, 3s, 6s (max ~10s total wait)
 
 /**
  * Fetch with exponential backoff retry logic.

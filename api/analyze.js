@@ -23,6 +23,15 @@ export default async function handler(req) {
     return new Response('Method Not Allowed', { status: 405 })
   }
 
+  // ─── Env-var guard — surface missing config immediately ─────────
+  if (!process.env.GEMINI_API_KEY) {
+    console.error('[analyze] GEMINI_API_KEY is not set in environment variables')
+    return new Response(
+      JSON.stringify({ error: 'config_error', message: 'Server configuration error: GEMINI_API_KEY missing. Contact support.' }),
+      { status: 503 }
+    )
+  }
+
   // ─── 1. Verify Firebase JWT ──────────────────────────────────────
   const authHeader = req.headers.get('Authorization') ?? ''
   const token = authHeader.replace('Bearer ', '').trim()
@@ -32,7 +41,8 @@ export default async function handler(req) {
   try {
     const payload = await verifyFirebaseJWT(token)
     uid = payload.uid
-  } catch {
+  } catch (err) {
+    console.error('[analyze] JWT verification failed:', err?.message)
     return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })
   }
 
@@ -111,10 +121,12 @@ export default async function handler(req) {
   }
 
   // ─── 5. Call Gemini ──────────────────────────────────────────────
+  // Timeout is 20s — Vercel Edge Functions are terminated at ~25s.
+  // Aborting at 20s lets us return a clean error instead of being force-killed.
   let geminiData
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 28_000)
+    const timeout = setTimeout(() => controller.abort(), 20_000)
     const geminiRes = await fetch(GEMINI_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -122,10 +134,35 @@ export default async function handler(req) {
       signal: controller.signal,
     })
     clearTimeout(timeout)
+
+    if (!geminiRes.ok) {
+      const errBody = await geminiRes.json().catch(() => ({}))
+      const msg = errBody?.error?.message ?? `Gemini HTTP ${geminiRes.status}`
+      console.error('[analyze] Gemini error:', geminiRes.status, msg)
+      // 400 = bad API key or invalid request — surface to client immediately
+      if (geminiRes.status === 400 || geminiRes.status === 403) {
+        return new Response(
+          JSON.stringify({ error: 'gemini_auth', message: `Gemini rejected the request: ${msg}` }),
+          { status: 502 }
+        )
+      }
+      return new Response(
+        JSON.stringify({ error: 'gemini_error', message: `Gemini returned ${geminiRes.status}. Please try again.` }),
+        { status: 502 }
+      )
+    }
+
     geminiData = await geminiRes.json()
-  } catch {
+  } catch (err) {
+    const isTimeout = err?.name === 'AbortError'
+    console.error('[analyze] Gemini fetch error:', err?.name, err?.message)
     return new Response(
-      JSON.stringify({ error: 'gemini_timeout', message: 'Analysis timed out. Please try again.' }),
+      JSON.stringify({
+        error: isTimeout ? 'gemini_timeout' : 'gemini_fetch_error',
+        message: isTimeout
+          ? 'Analysis timed out (20s). Try uploading fewer or smaller files.'
+          : 'Could not reach the AI service. Please try again.',
+      }),
       { status: 504 }
     )
   }
