@@ -71,32 +71,41 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ error: 'invalid_body' }), { status: 400 })
   }
 
-  // Support both new multi-file format { files: [...] } and legacy { content, fileMetadata }
-  const fileList = body.files ?? [{ content: body.content, bureau: 'Report', fileMetadata: body.fileMetadata }]
+  // Support three formats:
+  //   New array: { files: [{ contents: [...], bureau }] }       ← current
+  //   Legacy:    { files: [{ content: {...}, bureau }] }        ← single content obj
+  //   Minimal:   { content: {...} }                             ← single file, no bureau
+  const fileList = body.files ?? [{ contents: body.content ? [body.content] : [], bureau: 'Report' }]
 
   if (!fileList.length) {
     return new Response(JSON.stringify({ error: 'no_files' }), { status: 400 })
   }
 
-  // ─── 4. Build Gemini parts — one label + one content part per bureau ──
-  // Each bureau report is labeled so Gemini knows which bureau each file belongs to.
+  // ─── 4. Build Gemini parts — one label + content part(s) per bureau ──
+  // Each bureau report is labeled so Gemini can cross-reference bureau-specific findings.
   const userParts = []
 
-  for (const { content, bureau } of fileList) {
-    if (!content) continue
+  for (const file of fileList) {
+    // Normalize: support both `contents` (array) and legacy `content` (single)
+    const parts = file.contents ?? (file.content ? [file.content] : [])
+    const bureau = file.bureau ?? 'Report'
 
-    // Label the report so Gemini can cross-reference bureau-specific findings
+    if (!parts.length) continue
+
+    // Label the report
     userParts.push({ text: `--- ${bureau.toUpperCase()} CREDIT REPORT ---` })
 
-    if (content.type === 'text') {
-      userParts.push({ text: content.text })
-    } else if (content.type === 'base64') {
-      userParts.push({
-        inline_data: {
-          mime_type: content.mimeType,
-          data: content.data,
-        },
-      })
+    for (const part of parts) {
+      if (part.type === 'text') {
+        userParts.push({ text: part.text })
+      } else if (part.type === 'base64') {
+        userParts.push({
+          inline_data: {
+            mime_type: part.mimeType,
+            data: part.data,
+          },
+        })
+      }
     }
   }
 

@@ -5,7 +5,7 @@ import Button from './Button'
 
 const ACCEPTED_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'])
 const ACCEPTED_EXTENSIONS = '.pdf,.png,.jpg,.jpeg'
-const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024 // 4MB
+const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024 // 10MB — files are compressed before upload
 
 const BUREAUS = [
   { id: 'experian',   label: 'Experian',   color: 'text-red-600',    ring: 'ring-red-300',    bg: 'bg-red-50/40' },
@@ -208,7 +208,7 @@ export default function UploadZone() {
       )}
 
       {/* Hint */}
-      <p className="text-center text-xs text-slate-400">PDF · PNG · JPEG · Max 4MB per file</p>
+      <p className="text-center text-xs text-slate-400">PDF · PNG · JPEG · Files are auto-compressed</p>
 
       {/* Analyze button */}
       <div className="flex justify-center">

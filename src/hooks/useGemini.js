@@ -36,11 +36,13 @@ export function useGemini() {
 
       try {
         // Extract content from all files in parallel
+        // extractFileContent now returns an ARRAY of content parts
+        // (machine PDFs → 1 text part, scanned PDFs → 1 compressed JPEG per page)
         const extracted = await Promise.all(
           fileList.map(async ({ file, bureau }) => {
-            const content = await extractFileContent(file)
+            const contents = await extractFileContent(file)
             return {
-              content,
+              contents, // array of { type, text|data, mimeType }
               bureau,
               fileMetadata: {
                 originalName: file.name,
