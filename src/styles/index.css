@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans antialiased;
+  }
+}
+
+@layer components {
+  /* ─── Glass surfaces ─────────────────────────────────────────────── */
+  .glass-surface {
+    @apply bg-white/40 backdrop-blur-2xl border border-white/60 shadow-xl shadow-slate-200/50;
+  }
+  .glass-surface-sm {
+    @apply bg-white/30 backdrop-blur-xl border border-white/50 shadow-lg shadow-slate-100/50;
+  }
+  .surface-inset {
+    @apply bg-white/60 border border-slate-100/80;
+  }
+
+  /* ─── Buttons ────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full
+           px-6 py-3 font-medium shadow-md
+           hover:shadow-lg hover:scale-[1.02]
+           active:scale-[0.97]
+           transition-all duration-150
+           min-h-[44px] min-w-[44px]
+           focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100;
+  }
+  .btn-ghost {
+    @apply text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-full
+           px-4 py-2 font-medium transition-all duration-150
+           min-h-[44px] min-w-[44px]
+           focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600;
+  }
+
+  /* ─── Typography ─────────────────────────────────────────────────── */
+  /* NOTE: text-slate-600 (#475569) — NOT slate-500 (#64748b).
+     slate-500 at text-xs fails WCAG 4.5:1 contrast ratio (4.32:1 measured). */
+  .text-subheader {
+    @apply text-slate-600 text-xs font-semibold tracking-widest uppercase;
+  }
+  .text-display {
+    @apply text-3xl font-semibold text-slate-800 tracking-tight;
+  }
+
+  /* ─── Radius helpers ─────────────────────────────────────────────── */
+  .panel-radius {
+    @apply rounded-[2rem];
+  }
+  .card-radius {
+    @apply rounded-[1.5rem];
+  }
+}
+
+/* Suppress outline on mouse users, keep for keyboard — handled by focus-visible above */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
