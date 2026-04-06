@@ -20,31 +20,44 @@ function toBase64Url(str) {
 }
 
 // ─── JWT Verification ────────────────────────────────────────────────────────
+//
+// Uses Google's JWK endpoint (not X.509 certs).
+// JWKs can be imported directly by crypto.subtle.importKey('jwk', ...) —
+// no PEM-to-DER conversion, no SPKI vs X.509 format mismatch.
 
-let cachedPublicKeys = null
-let publicKeysCachedAt = 0
-const PUBLIC_KEY_TTL_MS = 3_600_000 // 1 hour
+let cachedJWKs = null       // Map<kid, JWK>
+let jwksCachedAt = 0
+const JWK_TTL_MS = 3_600_000 // 1 hour
 
-async function getFirebasePublicKeys() {
-  if (cachedPublicKeys && Date.now() - publicKeysCachedAt < PUBLIC_KEY_TTL_MS) {
-    return cachedPublicKeys
+const FIREBASE_JWK_URL =
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'
+
+async function getFirebaseJWKs() {
+  if (cachedJWKs && Date.now() - jwksCachedAt < JWK_TTL_MS) {
+    return cachedJWKs
   }
-  const res = await fetch(
-    'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'
-  )
-  cachedPublicKeys = await res.json()
-  publicKeysCachedAt = Date.now()
-  return cachedPublicKeys
+  const res = await fetch(FIREBASE_JWK_URL)
+  if (!res.ok) throw new Error(`Failed to fetch Firebase JWKs: ${res.status}`)
+  const data = await res.json()
+  const keyMap = {}
+  for (const key of data.keys) {
+    keyMap[key.kid] = key
+  }
+  cachedJWKs = keyMap
+  jwksCachedAt = Date.now()
+  return cachedJWKs
 }
 
 function base64UrlToBuffer(b64url) {
   const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/')
-  const binary = atob(b64)
+  const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+  const binary = atob(padded)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
   return bytes.buffer
 }
 
+// pemToDer is still used by getServiceAccountToken for PKCS8 private key import
 function pemToDer(pem) {
   const lines = pem.split('\n').filter((l) => !l.startsWith('---'))
   const b64 = lines.join('')
@@ -52,7 +65,7 @@ function pemToDer(pem) {
 }
 
 /**
- * Verifies a Firebase ID token using Google's public keys and Web Crypto API.
+ * Verifies a Firebase ID token using Google's JWK keys and Web Crypto API.
  * @param {string} token - Firebase ID token from Authorization: Bearer header
  * @returns {Promise<{ uid: string, email: string }>}
  */
@@ -62,16 +75,18 @@ export async function verifyFirebaseJWT(token) {
   const [headerB64, payloadB64, signatureB64] = parts
 
   // Decode header to find the key ID (kid)
-  const header = JSON.parse(atob(headerB64.replace(/-/g, '+').replace(/_/g, '/')))
-  const keys = await getFirebasePublicKeys()
-  const publicKeyPem = keys[header.kid]
-  if (!publicKeyPem) throw new Error('Unknown JWT key ID')
+  const headerStr = atob(headerB64.replace(/-/g, '+').replace(/_/g, '/'))
+  const header = JSON.parse(headerStr)
 
-  // Import RSA public key
-  const keyData = pemToDer(publicKeyPem)
+  // Fetch JWKs and find the matching key
+  const jwks = await getFirebaseJWKs()
+  const jwk = jwks[header.kid]
+  if (!jwk) throw new Error(`Unknown JWT kid: ${header.kid}`)
+
+  // Import the RSA public key directly from JWK — no PEM/DER needed
   const cryptoKey = await crypto.subtle.importKey(
-    'spki',
-    keyData,
+    'jwk',
+    jwk,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false,
     ['verify']
@@ -80,11 +95,17 @@ export async function verifyFirebaseJWT(token) {
   // Verify signature
   const sigBuffer = base64UrlToBuffer(signatureB64)
   const dataBuffer = new TextEncoder().encode(`${headerB64}.${payloadB64}`)
-  const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sigBuffer, dataBuffer)
+  const valid = await crypto.subtle.verify(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    sigBuffer,
+    dataBuffer
+  )
   if (!valid) throw new Error('JWT signature invalid')
 
   // Validate claims
-  const payload = JSON.parse(atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/')))
+  const payloadStr = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'))
+  const payload = JSON.parse(payloadStr)
   const now = Math.floor(Date.now() / 1000)
   if (payload.exp < now) throw new Error('JWT expired')
 
